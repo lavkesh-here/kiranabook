@@ -12,12 +12,10 @@ import 'features/settings/settings_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock to portrait
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
 
-  // Set system UI style
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: KColors.saffron,
@@ -25,7 +23,6 @@ void main() async {
     ),
   );
 
-  // Init local DB (offline-first)
   await HiveDB.init();
 
   runApp(
@@ -45,10 +42,6 @@ class KiranaBookApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: KTheme.theme,
       home: const HomeShell(),
-      supportedLocales: const [
-        Locale('hi', 'IN'),
-        Locale('en', 'US'),
-      ],
     );
   }
 }
@@ -81,7 +74,6 @@ class _HomeShellState extends State<HomeShell> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (i) {
-          // Provide haptic feedback on tap
           HapticFeedback.selectionClick();
           setState(() => _currentIndex = i);
         },
@@ -113,7 +105,6 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      // FAB for quick billing from any screen
       floatingActionButton: _currentIndex != 1
           ? FloatingActionButton.extended(
               onPressed: () {
@@ -125,10 +116,7 @@ class _HomeShellState extends State<HomeShell> {
               icon: const Icon(Icons.add),
               label: const Text(
                 'Naya Bill',
-                style: TextStyle(
-                  fontFamily: 'Baloo2',
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
             )
           : null,

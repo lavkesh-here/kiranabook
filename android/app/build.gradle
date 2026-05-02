@@ -10,7 +10,7 @@ def flutterRoot = localProperties.getProperty('flutter.sdk')
 if (flutterRoot == null) {
     flutterRoot = System.getenv("FLUTTER_ROOT")
 }
-assert flutterRoot != null, "Flutter SDK not found"
+assert flutterRoot != null, "Flutter SDK not found. Define location with flutter.sdk in local.properties file or FLUTTER_ROOT env var."
 
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
@@ -24,8 +24,14 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
-    kotlinOptions { jvmTarget = '1.8' }
-    sourceSets { main.java.srcDirs += 'src/main/kotlin' }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
 
     defaultConfig {
         applicationId "com.kiranabook.app"
@@ -39,15 +45,13 @@ android {
         release {
             signingConfig signingConfigs.debug
             minifyEnabled false
-            shrinkResources false
-        }
-        debug {
-            signingConfig signingConfigs.debug
         }
     }
 }
 
-flutter { source '../..' }
+flutter {
+    source '../..'
+}
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"

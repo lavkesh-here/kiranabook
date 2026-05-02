@@ -31,7 +31,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - uses: softprops/action-gh-release@v2
-        if: github.event_name != 'pull_request'
+        if: false
         with:
           tag_name: build-${{ github.run_number }}
           name: "KiranaBook Build #${{ github.run_number }}"

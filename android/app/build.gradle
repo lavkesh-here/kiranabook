@@ -13,14 +13,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
-
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
-
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
-    }
+    kotlinOptions { jvmTarget = '1.8' }
+    sourceSets { main.java.srcDirs += 'src/main/kotlin' }
 
     defaultConfig {
         applicationId "com.kiranabook.app"
@@ -31,19 +25,11 @@ android {
     }
 
     buildTypes {
-        release {
-            signingConfig signingConfigs.debug
-            minifyEnabled false
-        }
-        debug {
-            signingConfig signingConfigs.debug
-        }
+        release { signingConfig signingConfigs.debug }
     }
 }
 
-flutter {
-    source '../..'
-}
+flutter { source '../..' }
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"

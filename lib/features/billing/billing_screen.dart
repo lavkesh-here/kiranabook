@@ -8,13 +8,14 @@ import '../../core/services/transaction_service.dart';
 import '../../core/services/item_service.dart';
 import '../../core/services/customer_service.dart';
 import '../../core/services/share_service.dart';
+import '../../core/services/app_settings.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/theme/app_theme.dart';
 
-// Cart state provider
-final cartProvider = StateNotifierProvider<CartNotifier, Map<String, CartItem>>(
-  (ref) => CartNotifier(),
-);
+// ── Cart state ──
+final cartProvider =
+    StateNotifierProvider<CartNotifier, Map<String, CartItem>>(
+        (ref) => CartNotifier());
 
 class CartNotifier extends StateNotifier<Map<String, CartItem>> {
   CartNotifier() : super({});
@@ -29,15 +30,14 @@ class CartNotifier extends StateNotifier<Map<String, CartItem>> {
     state = updated;
   }
 
-  void removeItem(String itemId) {
+  void decrementItem(String itemId) {
     final updated = Map<String, CartItem>.from(state);
-    if (updated.containsKey(itemId)) {
-      final qty = updated[itemId]!.qty;
-      if (qty <= 1) {
-        updated.remove(itemId);
-      } else {
-        updated[itemId] = CartItem(item: updated[itemId]!.item, qty: qty - 1);
-      }
+    if (!updated.containsKey(itemId)) return;
+    final qty = updated[itemId]!.qty;
+    if (qty <= 1) {
+      updated.remove(itemId);
+    } else {
+      updated[itemId] = CartItem(item: updated[itemId]!.item, qty: qty - 1);
     }
     state = updated;
   }
@@ -46,27 +46,24 @@ class CartNotifier extends StateNotifier<Map<String, CartItem>> {
     final updated = Map<String, CartItem>.from(state);
     if (qty <= 0) {
       updated.remove(itemId);
-    } else {
-      if (updated.containsKey(itemId)) {
-        updated[itemId] = CartItem(item: updated[itemId]!.item, qty: qty);
-      }
+    } else if (updated.containsKey(itemId)) {
+      updated[itemId] = CartItem(
+          item: updated[itemId]!.item, qty: qty.clamp(1, 99999));
     }
     state = updated;
   }
 
   void clear() => state = {};
-
   int get totalPaisa =>
       state.values.fold(0, (sum, ci) => sum + ci.totalPaisa);
-
   int get totalItems => state.values.fold(0, (sum, ci) => sum + ci.qty);
 }
 
 final selectedCustomerProvider = StateProvider<CustomerModel?>((ref) => null);
+final reminderDateProvider = StateProvider<DateTime?>((ref) => null);
 
 class BillingScreen extends ConsumerStatefulWidget {
   const BillingScreen({super.key});
-
   @override
   ConsumerState<BillingScreen> createState() => _BillingScreenState();
 }
@@ -92,52 +89,48 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     super.dispose();
   }
 
-  void _onSearch() {
-    setState(() {
-      _displayItems = _itemSvc.searchItems(_searchController.text);
-    });
-  }
+  void _onSearch() => setState(() {
+        _displayItems = _itemSvc.searchItems(_searchController.text);
+      });
 
-  void _refreshItems() {
-    setState(() {
-      _displayItems = _itemSvc.searchItems(_searchController.text);
-    });
-  }
+  void _refreshItems() => setState(() {
+        _displayItems = _itemSvc.searchItems(_searchController.text);
+      });
 
   Future<void> _saveBill(String paymentMode) async {
     final cart = ref.read(cartProvider);
-    if (cart.isEmpty) return;
-
-    // Prevent double-tap
-    if (_isSaving) return;
+    if (cart.isEmpty || _isSaving) return;
     setState(() => _isSaving = true);
     HapticFeedback.mediumImpact();
-
     try {
       final customer = ref.read(selectedCustomerProvider);
-      final txnSvc = TransactionService();
-
-      await txnSvc.createSale(
+      final reminderDate = ref.read(reminderDateProvider);
+      await TransactionService().createSale(
         cartItems: cart.values.toList(),
         paymentMode: paymentMode,
         customer: customer,
+        reminderDate:
+            paymentMode == 'UDHAAR' ? reminderDate : null,
       );
-
-      // Clear cart and customer selection
       ref.read(cartProvider.notifier).clear();
       ref.read(selectedCustomerProvider.notifier).state = null;
+      ref.read(reminderDateProvider.notifier).state = null;
       _refreshItems();
-
       if (mounted) {
         HapticFeedback.heavyImpact();
-        _showBillSavedDialog(paymentMode);
+        _showBillSaved(paymentMode);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  void _showBillSavedDialog(String mode) {
+  void _showBillSaved(String mode) {
+    String modeText = mode == 'CASH'
+        ? '💵 Cash mila'
+        : mode == 'ONLINE'
+            ? '📲 Online payment'
+            : '📝 Udhaar darj kiya';
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -145,53 +138,37 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         margin: const EdgeInsets.all(12),
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: KColors.card,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
+            color: KColors.card, borderRadius: BorderRadius.circular(20)),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
                 color: KColors.greenPale,
-                borderRadius: BorderRadius.circular(32),
-              ),
-              child: const Icon(Icons.check_circle,
-                  color: KColors.green, size: 36),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Bill Save Ho Gaya! ✓',
+                borderRadius: BorderRadius.circular(32)),
+            child: const Icon(Icons.check_circle,
+                color: KColors.green, size: 36),
+          ),
+          const SizedBox(height: 12),
+          const Text('Bill Save Ho Gaya! ✓',
               style: TextStyle(
-                fontFamily: 'Baloo2',
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: KColors.green,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              mode == 'CASH' ? 'Cash mila ✓' : 'Udhaar darj kiya ✓',
+                  fontFamily: 'Baloo2',
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: KColors.green)),
+          const SizedBox(height: 4),
+          Text(modeText,
               style: const TextStyle(
-                fontFamily: 'Baloo2',
-                fontSize: 14,
-                color: KColors.inkSoft,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.receipt_long),
-              label: const Text('Naya Bill Banao'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: KColors.saffron,
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+                  fontFamily: 'Baloo2',
+                  fontSize: 14,
+                  color: KColors.inkSoft)),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.receipt_long),
+            label: const Text('Naya Bill Banao'),
+          ),
+          const SizedBox(height: 8),
+        ]),
       ),
     );
   }
@@ -201,51 +178,47 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final cart = ref.watch(cartProvider);
     final cartNotifier = ref.read(cartProvider.notifier);
     final selectedCustomer = ref.watch(selectedCustomerProvider);
-    final totalPaisa = cartNotifier.totalPaisa;
+    final settings = ref.watch(appSettingsProvider);
     final hasItems = cart.isNotEmpty;
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('Naya Bill 🧾'),
         actions: [
           if (hasItems)
             TextButton(
               onPressed: () {
-                HapticFeedback.selectionClick();
                 ref.read(cartProvider.notifier).clear();
                 ref.read(selectedCustomerProvider.notifier).state = null;
+                ref.read(reminderDateProvider.notifier).state = null;
               },
-              child: const Text(
-                'Clear',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontFamily: 'Baloo2',
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              child: const Text('Clear',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontFamily: 'Baloo2',
+                      fontWeight: FontWeight.w600)),
             ),
         ],
       ),
       body: Column(
         children: [
-          // Customer picker chip
-          _CustomerChip(
-            selected: selectedCustomer,
-            onTap: () => _showCustomerPicker(context),
-          ),
+          // Customer picker
+          if (settings.customerManagementEnabled)
+            _CustomerChip(
+              selected: selectedCustomer,
+              onTap: () => _showCustomerPicker(context),
+            ),
 
-          // Search bar
+          // Search
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: TextField(
               controller: _searchController,
               decoration: const InputDecoration(
-                hintText: '🔍 Item dhundho...',
+                hintText: '🔍 Item dhundho... (Hindi ya English)',
                 prefixIcon: Icon(Icons.search, color: KColors.inkSoft),
-                hintStyle: TextStyle(
-                  fontFamily: 'Baloo2',
-                  color: KColors.inkSoft,
-                ),
+                hintStyle: TextStyle(fontFamily: 'Baloo2', color: KColors.inkSoft),
               ),
             ),
           ),
@@ -254,27 +227,19 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           Expanded(
             child: _displayItems.isEmpty
                 ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.search_off,
-                            size: 48, color: KColors.inkGhost),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Koi item nahi mila',
-                          style: TextStyle(
-                            fontFamily: 'Baloo2',
-                            color: KColors.inkSoft,
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => _showAddItemSheet(context),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Naya item add karo'),
-                        ),
-                      ],
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.search_off,
+                        size: 48, color: KColors.inkGhost),
+                    const SizedBox(height: 8),
+                    const Text('Koi item nahi mila',
+                        style: TextStyle(
+                            fontFamily: 'Baloo2', color: KColors.inkSoft)),
+                    TextButton.icon(
+                      onPressed: () => _showAddItemSheet(context),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Naya item add karo'),
                     ),
-                  )
+                  ]))
                 : GridView.builder(
                     padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                     gridDelegate:
@@ -282,14 +247,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       crossAxisCount: 3,
                       mainAxisSpacing: 8,
                       crossAxisSpacing: 8,
-                      childAspectRatio: 1.0,
+                      childAspectRatio: 0.85,
                     ),
-                    itemCount: _displayItems.length + 1, // +1 for add button
+                    itemCount: _displayItems.length + 1,
                     itemBuilder: (ctx, i) {
                       if (i == _displayItems.length) {
                         return _AddItemButton(
-                          onTap: () => _showAddItemSheet(context),
-                        );
+                            onTap: () => _showAddItemSheet(context));
                       }
                       final item = _displayItems[i];
                       final qty = cart[item.id]?.qty ?? 0;
@@ -300,26 +264,30 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                           HapticFeedback.selectionClick();
                           cartNotifier.addItem(item);
                         },
+                        onDecrement: () => cartNotifier.decrementItem(item.id),
                         onLongPress: () => _showQtyDialog(context, item, qty),
                       );
                     },
                   ),
           ),
 
-          // Cart total + pay buttons
+          // Cart footer
           if (hasItems)
             _CartFooter(
-              totalPaisa: totalPaisa,
+              totalPaisa: cartNotifier.totalPaisa,
               cart: cart,
               isSaving: _isSaving,
+              showOnline: settings.onlinePaymentEnabled,
               onCash: () => _saveBill('CASH'),
               onUdhaar: () {
-                if (selectedCustomer == null) {
+                if (selectedCustomer == null &&
+                    settings.customerManagementEnabled) {
                   _showCustomerRequiredSnack();
                 } else {
-                  _saveBill('UDHAAR');
+                  _showReminderPicker(context, () => _saveBill('UDHAAR'));
                 }
               },
+              onOnline: () => _saveBill('ONLINE'),
             ),
         ],
       ),
@@ -327,49 +295,106 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   }
 
   void _showCustomerRequiredSnack() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text(
-          '👤 Udhaar ke liye customer chunna zaroori hai',
-          style: TextStyle(fontFamily: 'Baloo2'),
-        ),
-        backgroundColor: KColors.saffron,
-        action: SnackBarAction(
-          label: 'Customer Add',
-          textColor: Colors.white,
-          onPressed: () => _showCustomerPicker(context),
-        ),
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('👤 Udhaar ke liye customer chunna zaroori hai',
+          style: TextStyle(fontFamily: 'Baloo2')),
+      backgroundColor: KColors.saffron,
+      action: SnackBarAction(
+        label: 'Add',
+        textColor: Colors.white,
+        onPressed: () => _showCustomerPicker(context),
+      ),
+    ));
+  }
+
+  void _showReminderPicker(BuildContext ctx, VoidCallback onSave) {
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+            color: KColors.card, borderRadius: BorderRadius.circular(20)),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Reminder date set karo? (optional)',
+              style: TextStyle(
+                  fontFamily: 'Baloo2',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          const Text('Kis din customer ko payment yaad dilaana hai?',
+              style:
+                  TextStyle(fontFamily: 'Baloo2', color: KColors.inkSoft, fontSize: 13)),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  onSave();
+                },
+                icon: const Icon(Icons.skip_next),
+                label: const Text('Skip karo'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  final date = await showDatePicker(
+                    context: ctx,
+                    initialDate:
+                        DateTime.now().add(const Duration(days: 7)),
+                    firstDate: DateTime.now(),
+                    lastDate:
+                        DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (date != null) {
+                    ref.read(reminderDateProvider.notifier).state = date;
+                  }
+                  onSave();
+                },
+                icon: const Icon(Icons.calendar_today),
+                label: const Text('Date chunno'),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 8),
+        ]),
       ),
     );
   }
 
   void _showQtyDialog(BuildContext context, ItemModel item, int currentQty) {
-    final controller = TextEditingController(
-      text: currentQty > 0 ? '$currentQty' : '',
-    );
+    final controller =
+        TextEditingController(text: currentQty > 0 ? '$currentQty' : '');
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(
-          item.nameHindi ?? item.name,
-          style: const TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w700),
-        ),
+        title: Text(item.nameHindi ?? item.name,
+            style: const TextStyle(
+                fontFamily: 'Baloo2', fontWeight: FontWeight.w700)),
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
           autofocus: true,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(5),
+          ],
           decoration: InputDecoration(
-            labelText: 'Kitna (${item.unit})',
-            suffix: Text(item.unit),
-          ),
+              labelText: 'Kitna (${item.unit})', suffix: Text(item.unit)),
         ),
         actions: [
           TextButton(
             onPressed: () {
-              ref.read(cartProvider.notifier).removeItem(item.id);
+              ref.read(cartProvider.notifier).setQty(item.id, 0);
               Navigator.pop(context);
             },
-            child: const Text('Hatao', style: TextStyle(color: KColors.red)),
+            child: const Text('Hatao',
+                style: TextStyle(color: KColors.red)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -402,27 +427,27 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AddItemSheet(
-        onAdded: () {
-          _refreshItems();
-          Navigator.pop(context);
-        },
-      ),
+      builder: (_) => _AddItemSheet(onAdded: () {
+        _refreshItems();
+        Navigator.pop(context);
+      }),
     );
   }
 }
 
-// Item chip widget
+// ── Item chip with +/- ──
 class _ItemChip extends StatelessWidget {
   final ItemModel item;
   final int qty;
   final VoidCallback onTap;
+  final VoidCallback onDecrement;
   final VoidCallback onLongPress;
 
   const _ItemChip({
     required this.item,
     required this.qty,
     required this.onTap,
+    required this.onDecrement,
     required this.onLongPress,
   });
 
@@ -430,9 +455,9 @@ class _ItemChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAdded = qty > 0;
     final isLow = item.isLowStock;
+    final isOut = item.isOutOfStock;
 
     return GestureDetector(
-      onTap: onTap,
       onLongPress: onLongPress,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
@@ -440,107 +465,109 @@ class _ItemChip extends StatelessWidget {
           color: isAdded ? KColors.greenPale : KColors.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isAdded
-                ? KColors.green
-                : isLow
-                    ? KColors.yellow
-                    : KColors.border,
+            color: isAdded ? KColors.green : isLow ? KColors.yellow : KColors.border,
             width: isAdded ? 2 : 1,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: KColors.ink.withOpacity(0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: KColors.ink.withOpacity(0.06), blurRadius: 4, offset: const Offset(0, 2))],
         ),
-        child: Stack(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Item name (Hindi + English)
             Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        item.nameHindi ?? item.name,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: 'Baloo2',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: isAdded ? KColors.greenDark : KColors.ink,
-                        ),
-                      ),
-                    ),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Column(children: [
+                Text(
+                  item.nameHindi ?? item.name,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Baloo2',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isAdded ? KColors.greenDark : KColors.ink,
                   ),
+                ),
+                if (item.nameHindi != null && item.nameHindi != item.name)
                   Text(
-                    KCurrency.format(item.pricePaisa),
-                    style: TextStyle(
-                      fontFamily: 'Baloo2',
-                      fontSize: 11,
-                      color: isAdded ? KColors.green : KColors.inkSoft,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    '/${item.unit}',
+                    item.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontFamily: 'Baloo2',
                       fontSize: 10,
-                      color: KColors.inkGhost,
+                      color: KColors.inkSoft,
+                    ),
+                  ),
+              ]),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              KCurrency.format(item.pricePaisa),
+              style: TextStyle(
+                fontFamily: 'Baloo2',
+                fontSize: 11,
+                color: isAdded ? KColors.green : KColors.inkSoft,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            // Stock indicator
+            Text(
+              isOut ? 'Stock khatam' : 'Stock: ${item.stock}',
+              style: TextStyle(
+                fontFamily: 'Baloo2',
+                fontSize: 9,
+                color: isOut ? KColors.red : isLow ? KColors.yellow : KColors.inkGhost,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            // +/- controls
+            if (isAdded)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: onDecrement,
+                    child: Container(
+                      width: 24, height: 24,
+                      decoration: BoxDecoration(
+                          color: KColors.red.withOpacity(0.1),
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.remove, size: 14, color: KColors.red),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text('$qty',
+                        style: const TextStyle(
+                            fontFamily: 'Baloo2',
+                            fontWeight: FontWeight.w800,
+                            color: KColors.green,
+                            fontSize: 14)),
+                  ),
+                  GestureDetector(
+                    onTap: onTap,
+                    child: Container(
+                      width: 24, height: 24,
+                      decoration: BoxDecoration(
+                          color: KColors.green.withOpacity(0.1),
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.add, size: 14, color: KColors.green),
                     ),
                   ),
                 ],
-              ),
-            ),
-            if (qty > 0)
-              Positioned(
-                top: 4,
-                right: 4,
+              )
+            else
+              GestureDetector(
+                onTap: onTap,
                 child: Container(
-                  width: 22,
-                  height: 22,
-                  decoration: const BoxDecoration(
-                    color: KColors.green,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '$qty',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        fontFamily: 'Baloo2',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            if (isLow && qty == 0)
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  width: 28, height: 28,
                   decoration: BoxDecoration(
-                    color: KColors.yellow,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'कम',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      fontFamily: 'Baloo2',
-                    ),
-                  ),
+                      color: KColors.saffronPale, shape: BoxShape.circle),
+                  child: const Icon(Icons.add, size: 16, color: KColors.saffron),
                 ),
               ),
           ],
@@ -552,9 +579,7 @@ class _ItemChip extends StatelessWidget {
 
 class _AddItemButton extends StatelessWidget {
   final VoidCallback onTap;
-
   const _AddItemButton({required this.onTap});
-
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -570,16 +595,13 @@ class _AddItemButton extends StatelessWidget {
           children: [
             Icon(Icons.add_circle_outline, color: KColors.saffron, size: 28),
             SizedBox(height: 4),
-            Text(
-              'Naya\nItem',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Baloo2',
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: KColors.saffron,
-              ),
-            ),
+            Text('Naya\nItem',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontFamily: 'Baloo2',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: KColors.saffron)),
           ],
         ),
       ),
@@ -587,103 +609,79 @@ class _AddItemButton extends StatelessWidget {
   }
 }
 
+// ── Cart footer with 3 payment options ──
 class _CartFooter extends StatelessWidget {
   final int totalPaisa;
   final Map<String, CartItem> cart;
   final bool isSaving;
+  final bool showOnline;
   final VoidCallback onCash;
   final VoidCallback onUdhaar;
+  final VoidCallback onOnline;
 
   const _CartFooter({
     required this.totalPaisa,
     required this.cart,
     required this.isSaving,
+    required this.showOnline,
     required this.onCash,
     required this.onUdhaar,
+    required this.onOnline,
   });
 
   @override
   Widget build(BuildContext context) {
     final itemCount = cart.values.fold(0, (s, ci) => s + ci.qty);
-
     return Container(
       decoration: BoxDecoration(
         color: KColors.ink,
-        boxShadow: [
-          BoxShadow(
-            color: KColors.ink.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, -4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: KColors.ink.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, -4))],
       ),
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '$itemCount item',
-                    style: const TextStyle(
-                      fontFamily: 'Baloo2',
-                      color: Colors.white60,
-                      fontSize: 13,
-                    ),
-                  ),
-                  Text(
-                    'Kul: ${KCurrency.format(totalPaisa)}',
-                    style: const TextStyle(
-                      fontFamily: 'Baloo2',
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('$itemCount items',
+                  style: const TextStyle(fontFamily: 'Baloo2', color: Colors.white60, fontSize: 13)),
+              Text('Kul: ${KCurrency.format(totalPaisa)}',
+                  style: const TextStyle(fontFamily: 'Baloo2', color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isSaving ? null : onCash,
+                  icon: const Text('💵', style: TextStyle(fontSize: 16)),
+                  label: const Text('Cash'),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: KColors.green, minimumSize: const Size(0, 48)),
+                ),
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: isSaving ? null : onCash,
-                      icon: const Text('💵', style: TextStyle(fontSize: 18)),
-                      label: isSaving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Cash Mila'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: KColors.green,
-                        minimumSize: const Size(0, 52),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: isSaving ? null : onUdhaar,
-                      icon: const Text('📝', style: TextStyle(fontSize: 18)),
-                      label: const Text('Udhaar Diya'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: KColors.saffron,
-                        minimumSize: const Size(0, 52),
-                      ),
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 6),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isSaving ? null : onUdhaar,
+                  icon: const Text('📝', style: TextStyle(fontSize: 16)),
+                  label: const Text('Udhaar'),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: KColors.saffron, minimumSize: const Size(0, 48)),
+                ),
               ),
-            ],
-          ),
+              if (showOnline) ...[
+                const SizedBox(width: 6),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: isSaving ? null : onOnline,
+                    icon: const Text('📲', style: TextStyle(fontSize: 16)),
+                    label: const Text('Online'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: KColors.blue, minimumSize: const Size(0, 48)),
+                  ),
+                ),
+              ],
+            ]),
+          ]),
         ),
       ),
     );
@@ -693,9 +691,7 @@ class _CartFooter extends StatelessWidget {
 class _CustomerChip extends StatelessWidget {
   final CustomerModel? selected;
   final VoidCallback onTap;
-
   const _CustomerChip({this.selected, required this.onTap});
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -711,51 +707,37 @@ class _CustomerChip extends StatelessWidget {
             border: Border.all(
               color: selected != null ? KColors.green : KColors.border,
               width: selected != null ? 2 : 1,
-              style: selected != null ? BorderStyle.solid : BorderStyle.none,
             ),
           ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.person_outline,
-                color: selected != null ? KColors.green : KColors.inkSoft,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  selected != null
-                      ? '${selected!.name} ✓'
-                      : 'Customer chunno (optional)',
-                  style: TextStyle(
+          child: Row(children: [
+            Icon(Icons.person_outline,
+                color: selected != null ? KColors.green : KColors.inkSoft, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                selected != null ? '${selected!.name} ✓' : 'Customer chunno (optional)',
+                style: TextStyle(
                     fontFamily: 'Baloo2',
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: selected != null ? KColors.greenDark : KColors.inkSoft,
-                  ),
-                ),
+                    color: selected != null ? KColors.greenDark : KColors.inkSoft),
               ),
-              Icon(
-                Icons.arrow_drop_down,
-                color: selected != null ? KColors.green : KColors.inkGhost,
-              ),
-            ],
-          ),
+            ),
+            Icon(Icons.arrow_drop_down,
+                color: selected != null ? KColors.green : KColors.inkGhost),
+          ]),
         ),
       ),
     );
   }
 }
 
-// Customer picker bottom sheet
+// ── Customer picker sheet ──
 class _CustomerPickerSheet extends ConsumerStatefulWidget {
   final Function(CustomerModel?) onSelected;
-
   const _CustomerPickerSheet({required this.onSelected});
-
   @override
-  ConsumerState<_CustomerPickerSheet> createState() =>
-      _CustomerPickerSheetState();
+  ConsumerState<_CustomerPickerSheet> createState() => _CustomerPickerSheetState();
 }
 
 class _CustomerPickerSheetState extends ConsumerState<_CustomerPickerSheet> {
@@ -768,17 +750,12 @@ class _CustomerPickerSheetState extends ConsumerState<_CustomerPickerSheet> {
     super.initState();
     _customers = _custSvc.getAllCustomers();
     _searchCtrl.addListener(() {
-      setState(() {
-        _customers = _custSvc.searchCustomers(_searchCtrl.text);
-      });
+      setState(() => _customers = _custSvc.searchCustomers(_searchCtrl.text));
     });
   }
 
   @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -788,137 +765,71 @@ class _CustomerPickerSheetState extends ConsumerState<_CustomerPickerSheet> {
       minChildSize: 0.4,
       builder: (_, scrollCtrl) => Container(
         decoration: const BoxDecoration(
-          color: KColors.card,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: KColors.border,
-                borderRadius: BorderRadius.circular(2),
+            color: KColors.card,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        child: Column(children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: KColors.border, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              const Text('Customer chunno',
+                  style: TextStyle(fontFamily: 'Baloo2', fontSize: 18, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _showAddCustomer(context),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Naya'),
               ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: '🔍 Naam se dhundho...', prefixIcon: Icon(Icons.search)),
             ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  const Text(
-                    'Customer chunno',
-                    style: TextStyle(
-                      fontFamily: 'Baloo2',
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
+          ),
+          ListTile(
+            leading: Container(width: 40, height: 40,
+                decoration: const BoxDecoration(color: KColors.greenPale, shape: BoxShape.circle),
+                child: const Icon(Icons.currency_rupee, color: KColors.green)),
+            title: const Text('Cash Sale (koi customer nahi)',
+                style: TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w600)),
+            onTap: () { widget.onSelected(null); Navigator.pop(context); },
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _customers.isEmpty
+                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.person_off, size: 40, color: KColors.inkGhost),
+                    const SizedBox(height: 8),
+                    const Text('Koi customer nahi mila',
+                        style: TextStyle(fontFamily: 'Baloo2', color: KColors.inkSoft)),
+                    TextButton(onPressed: () => _showAddCustomer(context), child: const Text('Add karo')),
+                  ]))
+                : ListView.separated(
+                    controller: scrollCtrl,
+                    itemCount: _customers.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final c = _customers[i];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: KColors.saffronPale,
+                          child: Text(c.name[0].toUpperCase(),
+                              style: const TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w700, color: KColors.saffron)),
+                        ),
+                        title: Text(c.name, style: const TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w700)),
+                        subtitle: c.phone != null ? Text(c.phone!, style: const TextStyle(fontFamily: 'Baloo2')) : null,
+                        onTap: () { widget.onSelected(c); Navigator.pop(context); },
+                      );
+                    },
                   ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => _showAddCustomer(context),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Naya'),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: '🔍 Naam se dhundho...',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-            ),
-            // Cash sale option
-            ListTile(
-              leading: Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(
-                  color: KColors.greenPale,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.currency_rupee, color: KColors.green),
-              ),
-              title: const Text(
-                'Cash Sale (koi customer nahi)',
-                style: TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w600),
-              ),
-              onTap: () {
-                widget.onSelected(null);
-                Navigator.pop(context);
-              },
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: _customers.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.person_off,
-                              size: 40, color: KColors.inkGhost),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Koi customer nahi mila',
-                            style: TextStyle(
-                              fontFamily: 'Baloo2',
-                              color: KColors.inkSoft,
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => _showAddCustomer(context),
-                            child: const Text('Add karo'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
-                      controller: scrollCtrl,
-                      itemCount: _customers.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final c = _customers[i];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: KColors.saffronPale,
-                            child: Text(
-                              c.name[0].toUpperCase(),
-                              style: const TextStyle(
-                                fontFamily: 'Baloo2',
-                                fontWeight: FontWeight.w700,
-                                color: KColors.saffron,
-                              ),
-                            ),
-                          ),
-                          title: Text(
-                            c.name,
-                            style: const TextStyle(
-                              fontFamily: 'Baloo2',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          subtitle: c.phone != null
-                              ? Text(
-                                  c.phone!,
-                                  style: const TextStyle(fontFamily: 'Baloo2'),
-                                )
-                              : null,
-                          onTap: () {
-                            widget.onSelected(c);
-                            Navigator.pop(context);
-                          },
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
+          ),
+        ]),
       ),
     );
   }
@@ -929,43 +840,22 @@ class _CustomerPickerSheetState extends ConsumerState<_CustomerPickerSheet> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text(
-          'Naya Customer',
-          style: TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w700),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Naam *'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: phoneCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone (optional)',
-                prefixText: '+91 ',
-              ),
-            ),
-          ],
-        ),
+        title: const Text('Naya Customer', style: TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: nameCtrl, autofocus: true,
+              decoration: const InputDecoration(labelText: 'Naam *')),
+          const SizedBox(height: 8),
+          TextField(controller: phoneCtrl, keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'Phone (optional)', prefixText: '+91 ')),
+        ]),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
               if (nameCtrl.text.trim().isEmpty) return;
-              final custSvc = CustomerService();
-              final c = await custSvc.createCustomer(
+              final c = await CustomerService().createCustomer(
                 name: nameCtrl.text.trim(),
-                phone: phoneCtrl.text.trim().isEmpty
-                    ? null
-                    : phoneCtrl.text.trim(),
+                phone: phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
               );
               if (context.mounted) {
                 Navigator.pop(context);
@@ -981,18 +871,17 @@ class _CustomerPickerSheetState extends ConsumerState<_CustomerPickerSheet> {
   }
 }
 
-// Add item sheet
+// ── Add item sheet ──
 class _AddItemSheet extends StatefulWidget {
   final VoidCallback onAdded;
-
   const _AddItemSheet({required this.onAdded});
-
   @override
   State<_AddItemSheet> createState() => _AddItemSheetState();
 }
 
 class _AddItemSheetState extends State<_AddItemSheet> {
   final _nameCtrl = TextEditingController();
+  final _nameHindiCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
   final _stockCtrl = TextEditingController();
   String _unit = 'pcs';
@@ -1001,86 +890,58 @@ class _AddItemSheetState extends State<_AddItemSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         margin: const EdgeInsets.all(12),
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: KColors.card,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Naya Item Add Karo',
-              style: TextStyle(
-                fontFamily: 'Baloo2',
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+        decoration: BoxDecoration(color: KColors.card, borderRadius: BorderRadius.circular(20)),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Naya Item Add Karo',
+                style: TextStyle(fontFamily: 'Baloo2', fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 16),
-            TextField(
-              controller: _nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Item ka naam *'),
-            ),
+            TextField(controller: _nameCtrl, autofocus: true,
+                decoration: const InputDecoration(labelText: 'Item naam (English) *')),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _priceCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Daam (₹) *',
-                      prefixText: '₹ ',
-                    ),
-                  ),
+            TextField(controller: _nameHindiCtrl,
+                decoration: const InputDecoration(labelText: 'Item naam (Hindi) - optional')),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _priceCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [LengthLimitingTextInputFormatter(7)],
+                  decoration: const InputDecoration(labelText: 'Daam (₹) *', prefixText: '₹ '),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _unit,
-                    decoration: const InputDecoration(labelText: 'Unit'),
-                    items: _units
-                        .map((u) => DropdownMenuItem(value: u, child: Text(u)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _unit = v!),
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _unit,
+                  decoration: const InputDecoration(labelText: 'Unit'),
+                  items: _units.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                  onChanged: (v) => setState(() => _unit = v!),
                 ),
-              ],
-            ),
+              ),
+            ]),
             const SizedBox(height: 10),
             TextField(
               controller: _stockCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Abhi kitna stock hai',
-                suffixText: 'units',
-              ),
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
+              decoration: const InputDecoration(labelText: 'Abhi kitna stock hai', suffixText: 'units'),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: () async {
                 final name = _nameCtrl.text.trim();
-                final priceText = _priceCtrl.text.trim();
-                if (name.isEmpty || priceText.isEmpty) return;
-
-                final pricePaisa =
-                    KCurrency.parseRupees(priceText);
-                final stock = int.tryParse(_stockCtrl.text.trim()) ?? 0;
-
-                final svc = ItemService();
-                await svc.createItem(
+                if (name.isEmpty || _priceCtrl.text.trim().isEmpty) return;
+                await ItemService().createItem(
                   name: name,
-                  pricePaisa: pricePaisa,
-                  stock: stock,
+                  nameHindi: _nameHindiCtrl.text.trim().isEmpty ? null : _nameHindiCtrl.text.trim(),
+                  pricePaisa: KCurrency.parseRupees(_priceCtrl.text),
+                  stock: int.tryParse(_stockCtrl.text.trim()) ?? 0,
                   unit: _unit,
                 );
                 widget.onAdded();
@@ -1088,7 +949,7 @@ class _AddItemSheetState extends State<_AddItemSheet> {
               icon: const Icon(Icons.check),
               label: const Text('Save Karo'),
             ),
-          ],
+          ]),
         ),
       ),
     );

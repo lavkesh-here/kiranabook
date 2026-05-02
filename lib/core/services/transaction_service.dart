@@ -10,26 +10,21 @@ final transactionServiceProvider = Provider((ref) => TransactionService());
 class TransactionService {
   static const String storeId = 'store_001';
 
-  /// Create a SALE transaction (cash or udhaar)
-  /// This is the core action — must be atomic
   Future<TransactionModel> createSale({
     required List<CartItem> cartItems,
-    required String paymentMode, // CASH | UDHAAR
+    required String paymentMode, // CASH | UDHAAR | ONLINE
     CustomerModel? customer,
     String? note,
+    DateTime? reminderDate,
   }) async {
-    // 1. Build transaction items (snapshot prices at time of sale)
-    final txnItems = cartItems.map((ci) {
-      return TransactionItem()
-        ..itemId = ci.item.id
-        ..name = ci.item.name
-        ..qty = ci.qty
-        ..pricePaisa = ci.item.pricePaisa;
-    }).toList();
+    final txnItems = cartItems.map((ci) => TransactionItem()
+      ..itemId = ci.item.id
+      ..name = ci.item.name
+      ..qty = ci.qty
+      ..pricePaisa = ci.item.pricePaisa).toList();
 
     final total = txnItems.fold(0, (sum, i) => sum + i.totalPaisa);
 
-    // 2. Build transaction
     final txn = TransactionModel()
       ..id = IdGenerator.generate(storeId: storeId)
       ..type = 'SALE'
@@ -41,12 +36,11 @@ class TransactionService {
       ..totalAmountPaisa = total
       ..items = txnItems
       ..note = note
+      ..reminderDate = reminderDate
       ..synced = false;
 
-    // 3. Save transaction FIRST (atomic)
     await HiveDB.transactions.put(txn.id, txn);
 
-    // 4. Deduct stock for each item
     for (final ci in cartItems) {
       final item = HiveDB.items.get(ci.item.id);
       if (item != null) {
@@ -55,11 +49,9 @@ class TransactionService {
         await item.save();
       }
     }
-
     return txn;
   }
 
-  /// Record a payment from customer (udhaar wapsi)
   Future<TransactionModel> createPayment({
     required CustomerModel customer,
     required int amountPaisa,
@@ -76,17 +68,15 @@ class TransactionService {
       ..totalAmountPaisa = amountPaisa
       ..items = []
       ..note = note ?? 'Paisa wapas diya'
+      ..reminderDate = null
       ..synced = false;
 
     await HiveDB.transactions.put(txn.id, txn);
     return txn;
   }
 
-  /// Compute customer balance from transactions (never stored)
   int getCustomerBalance(String customerId) {
-    int totalUdhaar = 0;
-    int totalPayments = 0;
-
+    int totalUdhaar = 0, totalPayments = 0;
     for (final txn in HiveDB.transactions.values) {
       if (txn.customerId != customerId) continue;
       if (txn.type == 'SALE' && txn.paymentMode == 'UDHAAR') {
@@ -95,46 +85,56 @@ class TransactionService {
         totalPayments += txn.totalAmountPaisa;
       }
     }
-
     return totalUdhaar - totalPayments;
   }
 
-  /// Today's summary
-  DailySummary getDailySummary() {
-    final todayStart = DateTime(
-      DateTime.now().year,
-      DateTime.now().month,
-      DateTime.now().day,
-    );
+  DailySummary getDailySummary({DateTime? date}) {
+    final day = date ?? DateTime.now();
+    final todayStart = DateTime(day.year, day.month, day.day);
+    final todayEnd = DateTime(day.year, day.month, day.day, 23, 59, 59);
 
-    int cashTotal = 0;
-    int udhaarTotal = 0;
-    int paymentsTotal = 0;
-    int billCount = 0;
-
+    int cashTotal = 0, udhaarTotal = 0, onlineTotal = 0, paymentsTotal = 0, billCount = 0;
     for (final txn in HiveDB.transactions.values) {
-      if (txn.timestamp.isBefore(todayStart)) continue;
+      if (txn.timestamp.isBefore(todayStart) || txn.timestamp.isAfter(todayEnd)) continue;
       if (txn.type == 'SALE') {
         billCount++;
-        if (txn.paymentMode == 'CASH') {
-          cashTotal += txn.totalAmountPaisa;
-        } else if (txn.paymentMode == 'UDHAAR') {
-          udhaarTotal += txn.totalAmountPaisa;
-        }
+        if (txn.paymentMode == 'CASH') cashTotal += txn.totalAmountPaisa;
+        else if (txn.paymentMode == 'UDHAAR') udhaarTotal += txn.totalAmountPaisa;
+        else if (txn.paymentMode == 'ONLINE') onlineTotal += txn.totalAmountPaisa;
       } else if (txn.type == 'PAYMENT') {
         paymentsTotal += txn.totalAmountPaisa;
       }
     }
-
     return DailySummary(
-      cashTotal: cashTotal,
-      udhaarTotal: udhaarTotal,
-      paymentsReceived: paymentsTotal,
-      billCount: billCount,
+      cashTotal: cashTotal, udhaarTotal: udhaarTotal,
+      onlineTotal: onlineTotal, paymentsReceived: paymentsTotal, billCount: billCount,
     );
   }
 
-  /// All transactions for a customer (newest first)
+  // Get reminders due today or overdue
+  List<TransactionModel> getDueReminders() {
+    final today = DateTime.now();
+    return HiveDB.transactions.values.where((txn) {
+      if (txn.reminderDate == null) return false;
+      if (txn.paymentMode != 'UDHAAR') return false;
+      final balance = getCustomerBalance(txn.customerId ?? '');
+      if (balance <= 0) return false; // already paid
+      return !txn.reminderDate!.isAfter(
+          DateTime(today.year, today.month, today.day, 23, 59, 59));
+    }).toList()
+      ..sort((a, b) => a.reminderDate!.compareTo(b.reminderDate!));
+  }
+
+  WeeklySummary getWeeklySummary() {
+    final now = DateTime.now();
+    final List<DailySummary> days = [];
+    for (int i = 6; i >= 0; i--) {
+      final day = now.subtract(Duration(days: i));
+      days.add(getDailySummary(date: day));
+    }
+    return WeeklySummary(days: days);
+  }
+
   List<TransactionModel> getCustomerTransactions(String customerId) {
     return HiveDB.transactions.values
         .where((t) => t.customerId == customerId)
@@ -142,49 +142,44 @@ class TransactionService {
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
   }
 
-  /// Today's transactions (newest first)
   List<TransactionModel> getTodayTransactions() {
-    final todayStart = DateTime(
-      DateTime.now().year,
-      DateTime.now().month,
-      DateTime.now().day,
-    );
+    final todayStart = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     return HiveDB.transactions.values
         .where((t) => t.timestamp.isAfter(todayStart))
         .toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
   }
 
-  /// All transactions newest first
-  List<TransactionModel> getAllTransactions({int limit = 50}) {
-    final all = HiveDB.transactions.values.toList()
+  List<TransactionModel> getTransactionsByRange(DateTime start, DateTime end) {
+    return HiveDB.transactions.values
+        .where((t) => t.timestamp.isAfter(start) && t.timestamp.isBefore(end))
+        .toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    return all.take(limit).toList();
   }
 }
 
 class CartItem {
   final ItemModel item;
   int qty;
-
   CartItem({required this.item, this.qty = 1});
-
   int get totalPaisa => item.pricePaisa * qty;
   double get totalRupees => totalPaisa / 100;
 }
 
 class DailySummary {
-  final int cashTotal;
-  final int udhaarTotal;
-  final int paymentsReceived;
-  final int billCount;
-
+  final int cashTotal, udhaarTotal, onlineTotal, paymentsReceived, billCount;
   DailySummary({
-    required this.cashTotal,
-    required this.udhaarTotal,
-    required this.paymentsReceived,
+    required this.cashTotal, required this.udhaarTotal,
+    required this.onlineTotal, required this.paymentsReceived,
     required this.billCount,
   });
+  int get totalSales => cashTotal + udhaarTotal + onlineTotal;
+}
 
-  int get totalSales => cashTotal + udhaarTotal;
+class WeeklySummary {
+  final List<DailySummary> days;
+  WeeklySummary({required this.days});
+  int get totalSales => days.fold(0, (s, d) => s + d.totalSales);
+  int get totalCash => days.fold(0, (s, d) => s + d.cashTotal);
+  int get totalUdhaar => days.fold(0, (s, d) => s + d.udhaarTotal);
 }

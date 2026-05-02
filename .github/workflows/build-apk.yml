@@ -29,19 +29,21 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Build APK directly with Gradle
-        run: |
-          cd android
-          ./gradlew assembleRelease
-        env:
-          FLUTTER_ROOT: ${{ env.FLUTTER_ROOT }}
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi
 
-      - name: Find all APKs
-        run: find . -name "*.apk" 2>/dev/null
+      - name: Show build folder
+        run: |
+          echo "=== Searching for APK ==="
+          find $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null || echo "No APK found"
+          echo "=== Build folder ==="
+          ls -la $GITHUB_WORKSPACE/build/app/outputs/ 2>/dev/null || echo "No build folder"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: KiranaBook-APK
-          path: android/app/build/outputs/apk/release/
+          path: |
+            **/outputs/**/*.apk
+          if-no-files-found: warn
           retention-days: 30

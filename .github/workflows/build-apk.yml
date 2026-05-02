@@ -31,14 +31,25 @@ jobs:
 
       - name: Build APK
         run: flutter build apk --release --split-per-abi
-        env:
-          FLUTTER_ROOT: /opt/hostedtoolcache/flutter/stable-3.22.0-x64
+
+      - name: Find APK
+        run: find . -name "*.apk" -type f
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: KiranaBook-APK
-          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          path: build/app/outputs/apk/release/app-arm64-v8a-release.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload all APKs (fallback)
+        uses: actions/upload-artifact@v4
+        with:
+          name: KiranaBook-All-APKs
+          path: |
+            build/app/outputs/**/*.apk
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Create Release
@@ -46,14 +57,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: "KiranaBook v1.0 - Build #${{ github.run_number }}"
+          name: "KiranaBook Build #${{ github.run_number }}"
           body: |
-            ## 📱 KiranaBook APK Ready to Install!
-
-            1. Download `app-arm64-v8a-release.apk` below
-            2. Send to your Android phone via WhatsApp/Drive  
-            3. Open on phone → Allow unknown sources → Install ✅
-          files: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            ## 📱 KiranaBook APK Ready!
+            Download APK → Send to phone → Install ✅
+          files: build/app/outputs/**/*.apk
           draft: false
           prerelease: false
         env:

@@ -11,7 +11,7 @@ class LanguageScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      backgroundColor: KColors.bg,
+      backgroundColor: KColors.surface,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),

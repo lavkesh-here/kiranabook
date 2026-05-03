@@ -5,6 +5,7 @@ import '../../core/models/vendor_model.dart';
 import '../../core/models/vendor_transaction_model.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/k_search_bar.dart';
 
 class VendorScreen extends StatefulWidget {
   const VendorScreen({super.key});
@@ -44,9 +45,9 @@ class _VendorScreenState extends State<VendorScreen> {
       body: Column(children: [
         Padding(
           padding: const EdgeInsets.all(12),
-          child: TextField(
+          child: KSearchBar(
             controller: _searchCtrl,
-            decoration: const InputDecoration(hintText: '🔍 Vendor dhundho...', prefixIcon: Icon(Icons.search)),
+            hint: '🔍 Vendor dhundho...',
           ),
         ),
         Expanded(

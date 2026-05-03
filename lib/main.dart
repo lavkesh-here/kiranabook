@@ -3,12 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/db/hive_db.dart';
 import 'core/theme/app_theme.dart';
+import 'core/i18n/app_strings.dart';
 import 'features/billing/billing_screen.dart';
 import 'features/udhaar/udhaar_screen.dart';
 import 'features/inventory/inventory_screen.dart';
 import 'features/summary/summary_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/vendor/vendor_screen.dart';
+import 'features/reports/reports_screen.dart';
+import 'features/onboarding/language_screen.dart';
 import 'core/services/app_settings.dart';
 
 void main() async {
@@ -22,21 +25,37 @@ void main() async {
   runApp(const ProviderScope(child: KiranaBookApp()));
 }
 
-class KiranaBookApp extends StatelessWidget {
+class KiranaBookApp extends ConsumerWidget {
   const KiranaBookApp({super.key});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(languageProvider);
+    S.setLang(lang);
     return MaterialApp(
       title: 'KiranaBook',
       debugShowCheckedModeBanner: false,
       theme: KTheme.theme,
-      home: const HomeShell(),
+      home: const AppEntry(),
     );
   }
 }
 
-// Use enum to track screen — not index — fixes Issue 1
-enum AppScreen { home, billing, udhaar, inventory, vendor, settings }
+class AppEntry extends ConsumerWidget {
+  const AppEntry({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final langNotifier = ref.read(languageProvider.notifier);
+    if (!langNotifier.isSetup) {
+      return LanguageScreen(onDone: () {
+        // Rebuild to show home
+        ref.invalidate(languageProvider);
+      });
+    }
+    return const HomeShell();
+  }
+}
+
+enum AppScreen { home, billing, udhaar, inventory, vendor, reports, settings }
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
@@ -48,65 +67,52 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   AppScreen _current = AppScreen.home;
   DateTime? _lastBackPressed;
 
-  // Always full list of screens — IndexedStack shows all, nav picks visible ones
   final Map<AppScreen, Widget> _screens = const {
     AppScreen.home: SummaryScreen(),
     AppScreen.billing: BillingScreen(),
     AppScreen.udhaar: UdhaarScreen(),
     AppScreen.inventory: InventoryScreen(),
     AppScreen.vendor: VendorScreen(),
+    AppScreen.reports: ReportsScreen(),
     AppScreen.settings: SettingsScreen(),
   };
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
+    final lang = ref.watch(languageProvider);
+    S.setLang(lang);
 
-    // Build nav items dynamically based on feature flags
-    // ALWAYS include home, billing, inventory, settings
-    // Conditionally include udhaar and vendor
     final List<_NavItem> navItems = [
-      _NavItem(AppScreen.home, Icons.home_outlined, Icons.home, 'Ghar'),
-      _NavItem(AppScreen.billing, Icons.receipt_long_outlined,
-          Icons.receipt_long, 'Bill'),
+      _NavItem(AppScreen.home, Icons.home_outlined, Icons.home, S.navHome),
+      _NavItem(AppScreen.billing, Icons.receipt_long_outlined, Icons.receipt_long, S.navBill),
       if (settings.customerManagementEnabled)
-        _NavItem(
-            AppScreen.udhaar, Icons.people_outline, Icons.people, 'Udhaar'),
-      _NavItem(AppScreen.inventory, Icons.inventory_2_outlined,
-          Icons.inventory_2, 'Saman'),
+        _NavItem(AppScreen.udhaar, Icons.people_outline, Icons.people, S.navUdhaar),
+      _NavItem(AppScreen.inventory, Icons.inventory_2_outlined, Icons.inventory_2, S.navSaman),
       if (settings.vendorManagementEnabled)
-        _NavItem(AppScreen.vendor, Icons.store_outlined, Icons.store, 'Vendor'),
-      _NavItem(AppScreen.settings, Icons.settings_outlined, Icons.settings,
-          'Settings'),
+        _NavItem(AppScreen.vendor, Icons.store_outlined, Icons.store, S.navVendor),
+      _NavItem(AppScreen.reports, Icons.bar_chart_outlined, Icons.bar_chart, S.navReports),
+      _NavItem(AppScreen.settings, Icons.settings_outlined, Icons.settings, S.navSettings),
     ];
 
-    // If current screen is no longer in nav (feature disabled), go home
-    final visibleScreens = navItems.map((n) => n.screen).toList();
-    // Only redirect feature-gated screens (vendor/udhaar)
-    // Never redirect settings/home/billing/inventory
+    // Only redirect feature-gated screens, never settings/home/billing/inventory
     final gatedScreens = [AppScreen.vendor, AppScreen.udhaar];
+    final visibleScreens = navItems.map((n) => n.screen).toList();
     if (gatedScreens.contains(_current) && !visibleScreens.contains(_current)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         setState(() => _current = AppScreen.home);
       });
     }
 
-    final currentNavIndex =
-        navItems.indexWhere((n) => n.screen == _current).clamp(0, navItems.length - 1);
+    final currentNavIndex = navItems
+        .indexWhere((n) => n.screen == _current)
+        .clamp(0, navItems.length - 1);
 
-    // Screens to show in IndexedStack in fixed order
     final allScreenOrder = [
-      AppScreen.home,
-      AppScreen.billing,
-      AppScreen.udhaar,
-      AppScreen.inventory,
-      AppScreen.vendor,
-      AppScreen.settings,
+      AppScreen.home, AppScreen.billing, AppScreen.udhaar,
+      AppScreen.inventory, AppScreen.vendor, AppScreen.reports, AppScreen.settings,
     ];
     final currentStackIndex = allScreenOrder.indexOf(_current);
-
-    // Hide FAB on: billing, inventory, vendor, udhaar, settings
-    // Show FAB only on: home
     final showFab = _current == AppScreen.home;
 
     return PopScope(
@@ -121,10 +127,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
           _lastBackPressed = now;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Bahar jaane ke liye ek baar aur dabaiye',
-                  style: TextStyle(fontFamily: 'Baloo2')),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Text(
+                lang == 'en'
+                    ? 'Press back again to exit'
+                    : 'Bahar jaane ke liye ek baar aur dabaiye',
+                style: const TextStyle(fontFamily: 'Baloo2'),
+              ),
+              duration: const Duration(seconds: 2),
             ),
           );
         } else {
@@ -144,13 +154,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             HapticFeedback.selectionClick();
             setState(() => _current = navItems[i].screen);
           },
-          items: navItems
-              .map((n) => BottomNavigationBarItem(
-                    icon: Icon(n.icon),
-                    activeIcon: Icon(n.activeIcon),
-                    label: n.label,
-                  ))
-              .toList(),
+          items: navItems.map((n) => BottomNavigationBarItem(
+            icon: Icon(n.icon),
+            activeIcon: Icon(n.activeIcon),
+            label: n.label,
+          )).toList(),
         ),
         floatingActionButton: showFab
             ? FloatingActionButton.extended(
@@ -161,8 +169,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 backgroundColor: KColors.saffron,
                 foregroundColor: Colors.white,
                 icon: const Icon(Icons.add),
-                label: const Text('Naya Bill',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
+                label: Text(S.nayaBill,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
               )
             : null,
       ),

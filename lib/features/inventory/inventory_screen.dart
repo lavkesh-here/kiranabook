@@ -4,6 +4,7 @@ import '../../core/services/item_service.dart';
 import '../../core/models/item_model.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/k_search_bar.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -122,12 +123,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
           // Search
           Padding(
             padding: const EdgeInsets.all(12),
-            child: TextField(
+            child: KSearchBar(
               controller: _searchCtrl,
-              decoration: const InputDecoration(
-                hintText: '🔍 Item dhundho...',
-                prefixIcon: Icon(Icons.search),
-              ),
+              hint: '🔍 Item dhundho...',
             ),
           ),
 
@@ -198,7 +196,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
+      builder: (_) => AnimatedPadding(
+        duration: const Duration(milliseconds: 150),
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
@@ -243,7 +242,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
               ElevatedButton.icon(
                 onPressed: () async {
                   final qty = int.tryParse(ctrl.text.trim()) ?? 0;
-                  if (qty <= 0) return;
+                  if (qty <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Stock ki matra sahi daalo (1 ya zyada)!',
+                          style: TextStyle(fontFamily: 'Baloo2')),
+                      backgroundColor: KColors.red));
+                    return;
+                  }
                   await _itemSvc.addStock(item, qty);
                   if (context.mounted) {
                     Navigator.pop(context);
@@ -280,7 +285,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
+      builder: (_) => AnimatedPadding(
+        duration: const Duration(milliseconds: 150),
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),

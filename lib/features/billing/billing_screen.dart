@@ -11,6 +11,7 @@ import '../../core/services/share_service.dart';
 import '../../core/services/app_settings.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/k_search_bar.dart';
 
 // ── Cart state ──
 final cartProvider =
@@ -187,13 +188,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         title: const Text('Naya Bill 🧾'),
         actions: [
           if (hasItems)
-            TextButton(
+            TextButton.icon(
               onPressed: () {
                 ref.read(cartProvider.notifier).clear();
                 ref.read(selectedCustomerProvider.notifier).state = null;
                 ref.read(reminderDateProvider.notifier).state = null;
               },
-              child: const Text('Clear',
+              icon: const Icon(Icons.delete_outline, color: Colors.white70, size: 16),
+              label: const Text('Sab Hatao',
                   style: TextStyle(
                       color: Colors.white70,
                       fontFamily: 'Baloo2',
@@ -213,13 +215,9 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           // Search
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: TextField(
+            child: KSearchBar(
               controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: '🔍 Item dhundho... (Hindi ya English)',
-                prefixIcon: Icon(Icons.search, color: KColors.inkSoft),
-                hintStyle: TextStyle(fontFamily: 'Baloo2', color: KColors.inkSoft),
-              ),
+              hint: '🔍 Item dhundho... (Hindi ya English)',
             ),
           ),
 
@@ -251,11 +249,12 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     ),
                     itemCount: _displayItems.length + 1,
                     itemBuilder: (ctx, i) {
-                      if (i == _displayItems.length) {
+                      // Fix 2: Add Item button is FIRST
+                      if (i == 0) {
                         return _AddItemButton(
                             onTap: () => _showAddItemSheet(context));
                       }
-                      final item = _displayItems[i];
+                      final item = _displayItems[i - 1];
                       final qty = cart[item.id]?.qty ?? 0;
                       return _ItemChip(
                         item: item,

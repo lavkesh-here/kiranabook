@@ -8,6 +8,7 @@ import '../../core/models/transaction_model.dart';
 import '../../core/db/hive_db.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/k_search_bar.dart';
 
 class UdhaarScreen extends StatefulWidget {
   const UdhaarScreen({super.key});
@@ -91,9 +92,9 @@ class _UdhaarScreenState extends State<UdhaarScreen> with SingleTickerProviderSt
           ),
         Padding(
           padding: const EdgeInsets.all(12),
-          child: TextField(
+          child: KSearchBar(
             controller: _searchCtrl,
-            decoration: const InputDecoration(hintText: '🔍 Customer ka naam...', prefixIcon: Icon(Icons.search)),
+            hint: '🔍 Customer ka naam...',
           ),
         ),
         Expanded(
@@ -159,13 +160,14 @@ class _UdhaarScreenState extends State<UdhaarScreen> with SingleTickerProviderSt
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
+      builder: (_) => AnimatedPadding(
+        duration: const Duration(milliseconds: 150),
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Container(
           margin: const EdgeInsets.all(12),
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(color: KColors.card, borderRadius: BorderRadius.circular(20)),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Naya Customer Add Karo',
                 style: TextStyle(fontFamily: 'Baloo2', fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 16),
@@ -177,7 +179,12 @@ class _UdhaarScreenState extends State<UdhaarScreen> with SingleTickerProviderSt
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: () async {
-                if (nameCtrl.text.trim().isEmpty) return;
+                if (nameCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Naam daalna zaroori hai!', style: TextStyle(fontFamily: 'Baloo2')),
+                    backgroundColor: KColors.red));
+                  return;
+                }
                 await _custSvc.createCustomer(
                   name: nameCtrl.text.trim(),
                   phone: phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
@@ -186,7 +193,8 @@ class _UdhaarScreenState extends State<UdhaarScreen> with SingleTickerProviderSt
               },
               icon: const Icon(Icons.check), label: const Text('Save Karo'),
             ),
-          ]),
+            const SizedBox(height: 8),
+          ])),
         ),
       ),
     );

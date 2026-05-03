@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/db/hive_db.dart';
 import '../../core/services/app_settings.dart';
+import '../../core/i18n/app_strings.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 
@@ -195,6 +196,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   style: TextStyle(fontFamily: 'Baloo2', fontSize: 12, color: KColors.inkSoft)),
             ]),
           )),
+
+          const SizedBox(height: 24),
+
+          // Language section
+          _SectionHeader('Bhasha (Language)'),
+          const SizedBox(height: 8),
+          Card(child: Column(children: [
+            ListTile(
+              leading: const Text('🇮🇳', style: TextStyle(fontSize: 24)),
+              title: const Text('Hinglish', style: TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w700)),
+              subtitle: const Text('Hindi + English', style: TextStyle(fontFamily: 'Baloo2', fontSize: 12)),
+              trailing: Consumer(builder: (ctx, ref, _) {
+                final lang = ref.watch(languageProvider);
+                return lang == 'hi'
+                    ? const Icon(Icons.check_circle, color: KColors.green)
+                    : const SizedBox();
+              }),
+              onTap: () async {
+                await ref.read(languageProvider.notifier).setLanguage('hi');
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: const Text('🔄 App band karke dobara kholo — nayi bhasha lagegi',
+                      style: TextStyle(fontFamily: 'Baloo2')),
+                  backgroundColor: KColors.saffron,
+                  duration: const Duration(seconds: 3),
+                ));
+              },
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Text('🇬🇧', style: TextStyle(fontSize: 24)),
+              title: const Text('English', style: TextStyle(fontFamily: 'Baloo2', fontWeight: FontWeight.w700)),
+              subtitle: const Text('Full English', style: TextStyle(fontFamily: 'Baloo2', fontSize: 12)),
+              trailing: Consumer(builder: (ctx, ref, _) {
+                final lang = ref.watch(languageProvider);
+                return lang == 'en'
+                    ? const Icon(Icons.check_circle, color: KColors.green)
+                    : const SizedBox();
+              }),
+              onTap: () async {
+                await ref.read(languageProvider.notifier).setLanguage('en');
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: const Text('🔄 App restart required to apply new language',
+                      style: TextStyle(fontFamily: 'Baloo2')),
+                  backgroundColor: KColors.saffron,
+                  duration: const Duration(seconds: 3),
+                ));
+              },
+            ),
+          ])),
 
           const SizedBox(height: 24),
 

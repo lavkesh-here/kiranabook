@@ -22,13 +22,14 @@ class ItemModelAdapter extends TypeAdapter<ItemModel> {
       ..lowStockAlert = fields[6] as int
       ..unit = fields[7] as String
       ..active = fields[8] as bool
-      ..updatedAt = fields[9] as DateTime;
+      ..updatedAt = fields[9] as DateTime
+      ..mrpPaisa = fields[10] == null ? 0 : fields[10] as int;
   }
 
   @override
   void write(BinaryWriter writer, ItemModel obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -48,7 +49,9 @@ class ItemModelAdapter extends TypeAdapter<ItemModel> {
       ..writeByte(8)
       ..write(obj.active)
       ..writeByte(9)
-      ..write(obj.updatedAt);
+      ..write(obj.updatedAt)
+      ..writeByte(10)
+      ..write(obj.mrpPaisa);
   }
 
   @override

@@ -504,13 +504,24 @@ class _ItemChip extends StatelessWidget {
               ]),
             ),
             const SizedBox(height: 2),
+            if (item.hasMrp)
+              Text(
+                KCurrency.format(item.mrpPaisa),
+                style: const TextStyle(
+                  fontFamily: 'Baloo2',
+                  fontSize: 10,
+                  color: KColors.inkGhost,
+                  decoration: TextDecoration.lineThrough,
+                  decorationColor: KColors.inkGhost,
+                ),
+              ),
             Text(
               KCurrency.format(item.pricePaisa),
               style: TextStyle(
                 fontFamily: 'Baloo2',
                 fontSize: 11,
-                color: isAdded ? KColors.green : KColors.inkSoft,
-                fontWeight: FontWeight.w600,
+                color: isAdded ? KColors.green : KColors.saffron,
+                fontWeight: FontWeight.w700,
               ),
             ),
             // Stock indicator

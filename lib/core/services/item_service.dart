@@ -66,6 +66,7 @@ class ItemService {
     required String name,
     String? nameHindi,
     required int pricePaisa,
+    int mrpPaisa = 0,
     required int stock,
     required String unit,
     int lowStockAlert = 5,
@@ -76,6 +77,7 @@ class ItemService {
       ..name = name
       ..nameHindi = nameHindi
       ..pricePaisa = pricePaisa
+      ..mrpPaisa = mrpPaisa
       ..stock = stock
       ..lowStockAlert = lowStockAlert
       ..unit = unit

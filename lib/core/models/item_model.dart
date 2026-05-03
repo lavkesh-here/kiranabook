@@ -34,8 +34,13 @@ class ItemModel extends HiveObject {
   @HiveField(9)
   late DateTime updatedAt;
 
+  @HiveField(10)
+  int mrpPaisa = 0;
+
   // Computed helpers
   double get priceRupees => pricePaisa / 100;
+  double get mrpRupees => mrpPaisa / 100;
+  bool get hasMrp => mrpPaisa > 0 && mrpPaisa > pricePaisa;
   bool get isLowStock => stock <= lowStockAlert && stock >= 0;
   bool get isOutOfStock => stock <= 0;
 

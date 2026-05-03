@@ -3,9 +3,10 @@ name: Apply Code Patch
 on:
   workflow_dispatch:
     inputs:
-      patch_content:
-        description: 'Patch script content (base64 encoded)'
+      patch_file:
+        description: 'Patch file name (e.g. fix_bugs_v1.sh)'
         required: true
+        default: 'fix_bugs_v1.sh'
         type: string
       commit_message:
         description: 'Commit message'
@@ -30,11 +31,10 @@ jobs:
           git config user.email "patch@kiranabook.app"
           git config user.name "Claude Patch Bot"
 
-      - name: Apply patch
+      - name: Run patch
         run: |
-          echo "${{ github.event.inputs.patch_content }}" | base64 -d > patch.sh
-          chmod +x patch.sh
-          bash patch.sh
+          chmod +x patches/${{ github.event.inputs.patch_file }}
+          bash patches/${{ github.event.inputs.patch_file }}
 
       - name: Commit and push
         run: |
@@ -42,4 +42,4 @@ jobs:
           git diff --staged --stat
           git commit -m "${{ github.event.inputs.commit_message }}" || echo "Nothing to commit"
           git push origin main
-          echo "✅ Patch applied successfully!"
+          echo "✅ Done!"

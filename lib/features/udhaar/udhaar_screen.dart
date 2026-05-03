@@ -327,7 +327,8 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => Padding(
+      builder: (sheetCtx) => AnimatedPadding(
+        duration: const Duration(milliseconds: 150),
         padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
         child: Container(
           margin: const EdgeInsets.all(12),

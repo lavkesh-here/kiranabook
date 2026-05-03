@@ -35,6 +35,9 @@ class KiranaBookApp extends StatelessWidget {
   }
 }
 
+// Use enum to track screen — not index — fixes Issue 1
+enum AppScreen { home, billing, udhaar, inventory, vendor, settings }
+
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
   @override
@@ -42,31 +45,77 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  int _currentIndex = 0;
+  AppScreen _current = AppScreen.home;
   DateTime? _lastBackPressed;
 
-  final List<Widget> _screens = const [
-    SummaryScreen(),
-    BillingScreen(),
-    UdhaarScreen(),
-    InventoryScreen(),
-    VendorScreen(),
-    SettingsScreen(),
-  ];
+  // Always full list of screens — IndexedStack shows all, nav picks visible ones
+  final Map<AppScreen, Widget> _screens = const {
+    AppScreen.home: SummaryScreen(),
+    AppScreen.billing: BillingScreen(),
+    AppScreen.udhaar: UdhaarScreen(),
+    AppScreen.inventory: InventoryScreen(),
+    AppScreen.vendor: VendorScreen(),
+    AppScreen.settings: SettingsScreen(),
+  };
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
 
+    // Build nav items dynamically based on feature flags
+    // ALWAYS include home, billing, inventory, settings
+    // Conditionally include udhaar and vendor
+    final List<_NavItem> navItems = [
+      _NavItem(AppScreen.home, Icons.home_outlined, Icons.home, 'Ghar'),
+      _NavItem(AppScreen.billing, Icons.receipt_long_outlined,
+          Icons.receipt_long, 'Bill'),
+      if (settings.customerManagementEnabled)
+        _NavItem(
+            AppScreen.udhaar, Icons.people_outline, Icons.people, 'Udhaar'),
+      _NavItem(AppScreen.inventory, Icons.inventory_2_outlined,
+          Icons.inventory_2, 'Saman'),
+      if (settings.vendorManagementEnabled)
+        _NavItem(AppScreen.vendor, Icons.store_outlined, Icons.store, 'Vendor'),
+      _NavItem(AppScreen.settings, Icons.settings_outlined, Icons.settings,
+          'Settings'),
+    ];
+
+    // If current screen is no longer in nav (feature disabled), go home
+    final visibleScreens = navItems.map((n) => n.screen).toList();
+    // Only redirect feature-gated screens (vendor/udhaar)
+    // Never redirect settings/home/billing/inventory
+    final gatedScreens = [AppScreen.vendor, AppScreen.udhaar];
+    if (gatedScreens.contains(_current) && !visibleScreens.contains(_current)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() => _current = AppScreen.home);
+      });
+    }
+
+    final currentNavIndex =
+        navItems.indexWhere((n) => n.screen == _current).clamp(0, navItems.length - 1);
+
+    // Screens to show in IndexedStack in fixed order
+    final allScreenOrder = [
+      AppScreen.home,
+      AppScreen.billing,
+      AppScreen.udhaar,
+      AppScreen.inventory,
+      AppScreen.vendor,
+      AppScreen.settings,
+    ];
+    final currentStackIndex = allScreenOrder.indexOf(_current);
+
+    // Hide FAB on: billing, inventory, vendor, udhaar, settings
+    // Show FAB only on: home
+    final showFab = _current == AppScreen.home;
+
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) {
-        if (_currentIndex != 0) {
-          // Back goes to home first
-          setState(() => _currentIndex = 0);
+        if (_current != AppScreen.home) {
+          setState(() => _current = AppScreen.home);
           return;
         }
-        // Double back to exit
         final now = DateTime.now();
         if (_lastBackPressed == null ||
             now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
@@ -83,64 +132,48 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         }
       },
       child: Scaffold(
-        body: IndexedStack(index: _currentIndex, children: _screens),
+        body: IndexedStack(
+          index: currentStackIndex,
+          children: allScreenOrder
+              .map((s) => _screens[s] ?? const SizedBox())
+              .toList(),
+        ),
         bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _currentIndex,
+          currentIndex: currentNavIndex,
           onTap: (i) {
             HapticFeedback.selectionClick();
-            setState(() => _currentIndex = i);
+            setState(() => _current = navItems[i].screen);
           },
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Ghar',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.receipt_long_outlined),
-              activeIcon: Icon(Icons.receipt_long),
-              label: 'Bill',
-            ),
-            if (settings.customerManagementEnabled)
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.people_outline),
-                activeIcon: Icon(Icons.people),
-                label: 'Udhaar',
-              ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.inventory_2_outlined),
-              activeIcon: Icon(Icons.inventory_2),
-              label: 'Saman',
-            ),
-            if (settings.vendorManagementEnabled)
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.store_outlined),
-                activeIcon: Icon(Icons.store),
-                label: 'Vendor',
-              ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
+          items: navItems
+              .map((n) => BottomNavigationBarItem(
+                    icon: Icon(n.icon),
+                    activeIcon: Icon(n.activeIcon),
+                    label: n.label,
+                  ))
+              .toList(),
         ),
-        floatingActionButton: _currentIndex == 1
-            ? null
-            : _currentIndex == 3
-                ? null // Hide on inventory screen
-                : FloatingActionButton.extended(
-                    onPressed: () {
-                      HapticFeedback.mediumImpact();
-                      setState(() => _currentIndex = 1);
-                    },
-                    backgroundColor: KColors.saffron,
-                    foregroundColor: Colors.white,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Naya Bill',
-                        style: TextStyle(fontWeight: FontWeight.w700)),
-                  ),
+        floatingActionButton: showFab
+            ? FloatingActionButton.extended(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  setState(() => _current = AppScreen.billing);
+                },
+                backgroundColor: KColors.saffron,
+                foregroundColor: Colors.white,
+                icon: const Icon(Icons.add),
+                label: const Text('Naya Bill',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              )
+            : null,
       ),
     );
   }
+}
+
+class _NavItem {
+  final AppScreen screen;
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  const _NavItem(this.screen, this.icon, this.activeIcon, this.label);
 }

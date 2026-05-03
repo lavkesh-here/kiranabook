@@ -366,100 +366,135 @@ class _InventoryScreenState extends State<InventoryScreen> {
     String unit = 'pcs';
     final units = ['pcs', 'kg', 'litre', 'packet', 'box'];
 
+    final mrpCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: KColors.card,
-              borderRadius: BorderRadius.circular(20),
+        builder: (ctx, setS) {
+          bool isSaving = false;
+          return AnimatedPadding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Naya Item Add Karo',
-                  style: TextStyle(
-                    fontFamily: 'Baloo2',
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameCtrl,
-                  autofocus: true,
-                  decoration: const InputDecoration(labelText: 'Naam *'),
-                ),
-                const SizedBox(height: 10),
-                Row(
+            duration: const Duration(milliseconds: 150),
+            child: Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: KColors.card,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: priceCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Daam ₹ *',
-                          prefixText: '₹ ',
+                    const Text(
+                      'Naya Item Add Karo',
+                      style: TextStyle(
+                        fontFamily: 'Baloo2',
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: nameCtrl,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Naam *',
+                        hintText: 'e.g. Maggi',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: mrpCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'MRP (₹)',
+                            prefixText: '₹ ',
+                            hintText: 'Original price',
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: unit,
-                        decoration: const InputDecoration(labelText: 'Unit'),
-                        items: units
-                            .map((u) =>
-                                DropdownMenuItem(value: u, child: Text(u)))
-                            .toList(),
-                        onChanged: (v) => setS(() => unit = v!),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: unit,
+                          decoration: const InputDecoration(labelText: 'Unit'),
+                          items: units.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                          onChanged: (v) => setS(() => unit = v!),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: priceCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Bikri Daam (₹) *',
+                        prefixText: '₹ ',
+                        hintText: 'Selling price',
+                        helperText: 'Yeh daam bill mein dikhega',
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: stockCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: const InputDecoration(
+                        labelText: 'Shuru stock',
+                        suffixText: 'units',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: isSaving ? null : () async {
+                        final name = nameCtrl.text.trim();
+                        final priceText = priceCtrl.text.trim();
+                        if (name.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('Item naam zaroori hai!', style: TextStyle(fontFamily: 'Baloo2')),
+                            backgroundColor: KColors.red,
+                          ));
+                          return;
+                        }
+                        if (priceText.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('Bikri daam zaroori hai!', style: TextStyle(fontFamily: 'Baloo2')),
+                            backgroundColor: KColors.red,
+                          ));
+                          return;
+                        }
+                        setS(() => isSaving = true);
+                        await _itemSvc.createItem(
+                          name: name,
+                          pricePaisa: KCurrency.parseRupees(priceText),
+                          mrpPaisa: mrpCtrl.text.trim().isEmpty ? 0 : KCurrency.parseRupees(mrpCtrl.text),
+                          stock: int.tryParse(stockCtrl.text.trim()) ?? 0,
+                          unit: unit,
+                        );
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx);
+                          setState(() => _load());
+                        }
+                      },
+                      icon: const Icon(Icons.check),
+                      label: Text(isSaving ? 'Save ho raha hai...' : 'Save Karo'),
+                    ),
+                    const SizedBox(height: 8),
                   ],
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: stockCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Shuru stock',
-                    suffixText: 'units',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    final name = nameCtrl.text.trim();
-                    if (name.isEmpty || priceCtrl.text.trim().isEmpty) return;
-                    await _itemSvc.createItem(
-                      name: name,
-                      pricePaisa: KCurrency.parseRupees(priceCtrl.text),
-                      stock: int.tryParse(stockCtrl.text.trim()) ?? 0,
-                      unit: unit,
-                    );
-                    if (ctx.mounted) {
-                      Navigator.pop(ctx);
-                      setState(() => _load());
-                    }
-                  },
-                  icon: const Icon(Icons.check),
-                  label: const Text('Save Karo'),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

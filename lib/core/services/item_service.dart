@@ -28,13 +28,10 @@ class ItemService {
   }
 
   List<ItemModel> getLowStockItems() {
-    return HiveDB.items.values
-        .where((i) => i.active && i.isLowStock)
-        .toList();
+    return HiveDB.items.values.where((i) => i.active && i.isLowStock).toList();
   }
 
   Future<void> addStock(ItemModel item, int qty) async {
-    // Record a STOCK_ADD transaction for audit trail
     final txn = TransactionModel()
       ..id = IdGenerator.generate(storeId: storeId)
       ..type = 'STOCK_ADD'
@@ -52,11 +49,10 @@ class ItemService {
           ..pricePaisa = item.pricePaisa,
       ]
       ..note = 'Stock add kiya: $qty ${item.unit}'
+      ..reminderDate = null
       ..synced = false;
 
     await HiveDB.transactions.put(txn.id, txn);
-
-    // Update stock
     item.stock += qty;
     item.updatedAt = DateTime.now();
     await item.save();

@@ -20,13 +20,13 @@ class ItemModel extends HiveObject {
   late int pricePaisa; // selling price per unit
 
   @HiveField(5)
-  late int stock; // current count
+  late int stock;
 
   @HiveField(6)
-  late int lowStockAlert; // alert threshold
+  late int lowStockAlert;
 
   @HiveField(7)
-  late String unit; // kg, pcs, packet, litre
+  late String unit;
 
   @HiveField(8)
   late bool active;
@@ -35,7 +35,7 @@ class ItemModel extends HiveObject {
   late DateTime updatedAt;
 
   @HiveField(10)
-  int mrpPaisa = 0;
+  int mrpPaisa = 0; // MRP - buying/original price (optional)
 
   // Computed helpers
   double get priceRupees => pricePaisa / 100;
@@ -44,7 +44,6 @@ class ItemModel extends HiveObject {
   bool get isLowStock => stock <= lowStockAlert && stock >= 0;
   bool get isOutOfStock => stock <= 0;
 
-  String get displayName => nameHindi != null && nameHindi!.isNotEmpty
-      ? nameHindi!
-      : name;
+  String get displayName =>
+      nameHindi != null && nameHindi!.isNotEmpty ? nameHindi! : name;
 }
